@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Test Monitor - IoT Telemetry</title>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: #0f172a; color: #f8fafc; padding: 24px; min-height: 100vh; }
+    .container { max-width: 900px; margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 1px solid #334155; padding-bottom: 16px; }
+    h1 { font-size: 20px; font-weight: 700; color: #38bdf8; }
+    .status-badge { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; border-radius: 9999px; background: #1e293b; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; }
+    .status-dot.connected { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 18px; text-align: center; }
+    .card .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 8px; }
+    .card .value { font-size: 28px; font-weight: 700; color: #f8fafc; }
+    .card .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .badge-on { color: #22c55e; font-weight: bold; }
+    .badge-off { color: #94a3b8; font-weight: bold; }
+    .logs-panel { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
+    .logs-panel h2 { font-size: 14px; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; }
+    .logs-list { max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.6; }
+    .log-item { border-bottom: 1px solid #334155; padding: 6px 0; color: #cbd5e1; }
+    .highlight { color: #38bdf8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>🌱 IoT Telemetry Live Monitor</h1>
+        <p style="font-size: 13px; color: #94a3b8; margin-top: 4px;">Uji coba WebSocket (Socket.io) Realtime Dashboard</p>
+      </div>
+      <div class="status-badge">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">Terputus</span>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Suhu Udara</div>
+        <div class="value" id="valTemp">--</div>
+        <div class="sub">°C (DHT22 / SHT)</div>
+      </div>
+      <div class="card">
+        <div class="label">Kelembapan Udara</div>
+        <div class="value" id="valHum">--</div>
+        <div class="sub">% RH</div>
+      </div>
+      <div class="card">
+        <div class="label">Kelembapan Tanah</div>
+        <div class="value" id="valSoil">--</div>
+        <div class="sub" id="valRawSoil">Raw: --</div>
+      </div>
+      <div class="card">
+        <div class="label">Level Air Tandon</div>
+        <div class="value" id="valWater">--</div>
+        <div class="sub" id="valWaterOk">Status: --</div>
+      </div>
+      <div class="card">
+        <div class="label">Status Pompa</div>
+        <div class="value" id="valPump">--</div>
+        <div class="sub">Aktuator Relay</div>
+      </div>
+    </div>
+
+    <div class="logs-panel">
+      <h2>Log Data Masuk (telemetry:update)</h2>
+      <div class="logs-list" id="logList">
+        <div class="log-item">Menunggu data masuk dari server WebSocket...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Koneksi ke server Socket.io di port 5000 (atau host yang sama jika dilayani via tunnel)
+    const socket = io('http://localhost:5000');
+
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const valTemp = document.getElementById('valTemp');
+    const valHum = document.getElementById('valHum');
+    const valSoil = document.getElementById('valSoil');
+    const valRawSoil = document.getElementById('valRawSoil');
+    const valWater = document.getElementById('valWater');
+    const valWaterOk = document.getElementById('valWaterOk');
+    const valPump = document.getElementById('valPump');
+    const logList = document.getElementById('logList');
+
+    function updateUI(data) {
+      if (!data) return;
+      valTemp.textContent = `${data.temperature} °C`;
+      valHum.textContent = `${data.humidity} %`;
+      valSoil.textContent = `${data.soil_moisture} %`;
+      valRawSoil.textContent = `Raw: ${data.raw_soil ?? '-'}`;
+      valWater.textContent = `${data.water_level} %`;
+      valWaterOk.innerHTML = `Status: <span style="color: ${data.water_ok ? '#22c55e' : '#ef4444'}">${data.water_ok ? 'Aman' : 'Rendah'}</span>`;
+      valPump.innerHTML = data.pump_active 
+        ? `<span class="badge-on">ON</span>` 
+        : `<span class="badge-off">OFF</span>`;
+    }
+
+    function addLog(msg) {
+      const item = document.createElement('div');
+      item.className = 'log-item';
+      item.innerHTML = `<span class="highlight">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+      logList.insertBefore(item, logList.firstChild);
+      if (logList.children.length > 50) {
+        logList.removeChild(logList.lastChild);
+      }
+    }
+
+    socket.on('connect', () => {
+      statusDot.classList.add('connected');
+      statusText.textContent = `Terhubung (Socket ID: ${socket.id})`;
+      addLog(`Socket.io terhubung ke server.`);
+    });
+
+    socket.on('disconnect', () => {
+      statusDot.classList.remove('connected');
+      statusText.textContent = 'Terputus';
+      addLog(`Koneksi Socket.io terputus.`);
+    });
+
+    socket.on('telemetry:init', (data) => {
+      addLog(`Inisialisasi data mutakhir diterima (ID #${data.id})`);
+      updateUI(data);
+    });
+
+    socket.on('telemetry:update', (data) => {
+      addLog(`Data telemetri realtime diterima (ID #${data.id}): Suhu ${data.temperature}°C, Tanah ${data.soil_moisture}%, Pompa ${data.pump_active ? 'ON' : 'OFF'}`);
+      updateUI(data);
+    });
+
+    // Ambil data pertama via HTTP REST API jika socket belum menerima emit
+    fetch('http://localhost:5000/api/telemetry/latest')
+      .then(res => res.json())
+      .then(data => {
+        if (data) updateUI(data);
+      })
+      .catch(err => console.log('HTTP fetch initial data:', err));
+  </script>
+</body>
+</html>
